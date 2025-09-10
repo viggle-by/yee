@@ -1,109 +1,15 @@
-# syntax=docker/dockerfile:1.4
+FROM archlinux:latest
 
-FROM ubuntu:25.04
+# Update and install base dependencies, sudo, git, and github-cli
+# Also install 'which' as it's often used by scripts and might be missing
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm bash sudo git github-cli which less && \
+    # Clean up pacman cache
+    pacman -Scc --noconfirm
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    SHELL=/bin/bash \
-    DOCKER_BUILDKIT=1
-
-# Create user 'codespace'
-ARG USERNAME=codespace
-ARG USER_UID=1000
-ARG USER_GID=1000
-
-RUN apt-get update && \
-    apt-get install -y sudo && \
-    groupadd --gid ${USER_GID} ${USERNAME} && \
-    useradd --uid ${USER_UID} --gid ${USER_GID} -m ${USERNAME} && \
-    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/90-${USERNAME} && \
-    chmod 0440 /etc/sudoers.d/90-${USERNAME}
-
-# Copy first-run notice
-COPY first-run-notice.txt /tmp/scripts/first-run-notice.txt
-
-# Install base packages and dev tools (merge layers to reduce image size)
-RUN apt-get update && \
-    yes | unminimize 2>&1 && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        make \
-        unzip \
-        build-essential \
-        swig3.0 \
-        unixodbc-dev \
-        libpq-dev \
-        default-libmysqlclient-dev \
-        moreutils \
-        rsync \
-        zip \
-        libgdiplus \
-        jq \
-        python3-pip \
-        libc6 \
-        libgcc1 \
-        libgssapi-krb5-2 \
-        libncurses6 \
-        liblttng-ust1 \
-        libssl-dev \
-        libstdc++6 \
-        zlib1g \
-        libuuid1 \
-        libunwind8 \
-        sqlite3 \
-        libsqlite3-dev \
-        software-properties-common \
-        tk-dev \
-        uuid-dev \
-        curl \
-        gettext \
-        inotify-tools \
-        cmake \
-        cppcheck \
-        valgrind \
-        clang \
-        lldb \
-        llvm \
-        gdb \
-        python3-dev \
-        vim \
-        vim-doc \
-        xtail \
-        libsecret-1-dev \
-        fish && \
-    apt-get autoremove -y && \
-    apt-get clean -y && \
-    rm -rf /var/lib/apt/lists/* && \
-    \
-    # Setup fish prompt
-    printf "function fish_prompt\n  set_color green\n  echo -n (whoami)\n  set_color normal\n  echo -n \":\"\n  set_color blue\n  echo -n (pwd)\n  set_color normal\n  echo -n \"> \"\nend\n" > /etc/fish/functions/fish_prompt.fish && \
-    printf "if type code-insiders > /dev/null 2>&1; and not type code > /dev/null 2>&1\n  alias code=code-insiders\nend\n" > /etc/fish/conf.d/code_alias.fish && \
-    \
-    # Move first run notice
-    mkdir -p /usr/local/etc/vscode-dev-containers/ && \
-    mv -f /tmp/scripts/first-run-notice.txt /usr/local/etc/vscode-dev-containers/first-run-notice.txt
-
-# Install libssl1.1 for oryx compatibility based on architecture
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then \
-        curl -fsSL -o libssl1.1.deb http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb && \
-        dpkg -i libssl1.1.deb && rm libssl1.1.deb; \
-    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        curl -fsSL -o libssl1.1.deb http://ports.ubuntu.com/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb && \
-        dpkg -i libssl1.1.deb && rm libssl1.1.deb; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi
-
-# [Optional] Install vsdbg debugger for Codespaces development
-ARG DeveloperBuild
-RUN if [ -n "$DeveloperBuild" ]; then \
-        curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /vsdbg ; \
-    else \
-        echo "Skipping vsdbg installation"; \
-    fi
-
-# Enable Docker volume mount for Docker-in-Docker
-VOLUME ["/var/lib/docker"]
-
-# Default container command (override in devcontainer.json if needed)
-CMD ["sleep", "infinity"]
+# Create the codespace user with a home directory, add to wheel group (for sudo)
+# Set bash as the default shell
+RUN useradd -m -G wheel -s /bin/bash codespace && \
+    # Setup passwordless sudo for the codespace user
+    echo 'codespace ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/codespace && \
+    chmod 0440 /etc/sudoers.d/codespace
